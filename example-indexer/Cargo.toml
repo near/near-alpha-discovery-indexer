@@ -5,19 +5,19 @@ authors = ["Near Inc <hello@nearprotocol.com>"]
 edition = "2018"
 
 [dependencies]
-actix = "=0.11.0-beta.2"
-actix-rt = "=2.2.0"  # remove it once actix is upgraded to 0.11+
-actix-web = "=4.0.0-beta.6"
-actix-http = "=3.0.0-beta.6"
-actix-tls = "=3.0.0-beta.5"
-actix_derive = "=0.6.0-beta.1"
+actix = "=0.13.0"
+# actix-web = "=4.0.0-beta.6"
+# actix-http = "=3.0.0-beta.6"
+actix-tls = "3.0.0"
+actix-rt = "2.2.0"
 bigdecimal = "=0.1.0"
-anyhow = "1.0.43"
+anyhow = "1.0.51"
 diesel = { version = "1.4.7", features = ["postgres", "numeric", "serde_json"] }
 diesel-derive-enum = { git = "https://github.com/khorolets/diesel-derive-enum.git", branch = "lookup-hack", features = ["postgres"] }
-actix-diesel = { git = "https://github.com/frol/actix-diesel", branch="actix-0.11-beta.2" }
+
 openssl-probe = { version = "0.1.2" }
-tokio = { version = "1.1", features = ["time", "sync"] }
+# futures = "0.3.5"
+tokio = { version = "1.1", features = ["time", "sync", "rt-multi-thread"] }
 tokio-stream = { version = "0.1" }
 dotenv = "0.15.0"
 tracing = "0.1.13"
@@ -26,4 +26,5 @@ tracing-subscriber = "0.2.4"
 serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
 
-near-indexer = { git = "https://github.com/near/nearcore", rev = "9b3d6ba551f561a028f0216051e031bc2ba0c6b7" }
+actix-diesel = { git = "https://github.com/frol/actix-diesel", branch="actix-0.13" }
+near-indexer = { git = "https://github.com/near/nearcore", rev = "1.27.0" }

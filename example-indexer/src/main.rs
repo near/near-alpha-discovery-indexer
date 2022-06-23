@@ -104,7 +104,9 @@ fn main() {
             sys.block_on(async move {
                 let indexer = near_indexer::Indexer::new(indexer_config).unwrap();
                 let stream = indexer.streamer();
-                actix::spawn(listen_blocks(stream, pool));
+                listen_blocks(stream, pool).await;
+
+                actix::System::current().stop();
             });
             sys.run().unwrap();
         }
