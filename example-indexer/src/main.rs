@@ -10,13 +10,16 @@ use actix_diesel::Database;
 use diesel::PgConnection;
 use dotenv::dotenv;
 use near_indexer::near_primitives::views::{
-    ExecutionOutcomeView, ExecutionStatusView, ReceiptView,
+    ActionView, ExecutionOutcomeView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
+use std::collections::HashSet;
 use std::env;
+use std::str::FromStr;
 use tracing_subscriber::EnvFilter;
 
 use crate::models::enums::ExecutionOutcomeStatus;
 use crate::models::events::Event;
+use crate::models::social::Receipt;
 
 fn get_database_credentials() -> String {
     dotenv().ok();
@@ -37,6 +40,8 @@ const MAX_DELAY_TIME: std::time::Duration = std::time::Duration::from_secs(120);
 
 fn main() {
     openssl_probe::init_ssl_cert_env_vars();
+
+    let whitelisted_accounts = HashSet::from(["social.near".to_string()]);
 
     let args: Vec<String> = std::env::args().collect();
     let home_dir = std::path::PathBuf::from(near_indexer::get_default_home());
@@ -104,7 +109,7 @@ fn main() {
             sys.block_on(async move {
                 let indexer = near_indexer::Indexer::new(indexer_config).unwrap();
                 let stream = indexer.streamer();
-                listen_blocks(stream, pool).await;
+                listen_blocks(stream, pool, &whitelisted_accounts).await;
 
                 actix::System::current().stop();
             });
@@ -117,17 +122,21 @@ fn main() {
 async fn listen_blocks(
     mut stream: tokio::sync::mpsc::Receiver<near_indexer::StreamerMessage>,
     pool: Database<PgConnection>,
+    whitelisted_accounts: &HashSet<String>,
 ) {
     while let Some(streamer_message) = stream.recv().await {
-        extract_events(&pool, streamer_message).await.unwrap();
+        extract_info(&pool, streamer_message, whitelisted_accounts)
+            .await
+            .unwrap();
     }
 }
 
 const EVENT_LOG_PREFIX: &str = "EVENT_JSON:";
 
-async fn extract_events(
+async fn extract_info(
     pool: &Database<PgConnection>,
     msg: near_indexer::StreamerMessage,
+    whitelisted_accounts: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let block_height = msg.block.header.height;
     let block_hash = msg.block.header.hash.to_string();
@@ -135,13 +144,14 @@ async fn extract_events(
     let block_epoch_id = msg.block.header.epoch_id.to_string();
 
     let mut events = vec![];
+    let mut receipts = vec![];
     for shard in msg.shards {
-        for outcome in shard.receipt_execution_outcomes {
+        for (outcome_index, outcome) in shard.receipt_execution_outcomes.into_iter().enumerate() {
             let ReceiptView {
                 predecessor_id,
                 receiver_id: account_id,
                 receipt_id,
-                ..
+                receipt,
             } = outcome.receipt;
             let predecessor_id = predecessor_id.to_string();
             let account_id = account_id.to_string();
@@ -169,6 +179,53 @@ async fn extract_events(
                     })
                 }
             }
+            if whitelisted_accounts.contains(&account_id) {
+                match receipt {
+                    ReceiptEnumView::Action {
+                        signer_id,
+                        signer_public_key,
+                        actions,
+                        ..
+                    } => {
+                        for (index_in_receipt, action) in actions.into_iter().enumerate() {
+                            match action {
+                                ActionView::FunctionCall {
+                                    method_name,
+                                    args,
+                                    gas,
+                                    deposit,
+                                } => {
+                                    if let Ok(args) = String::from_utf8(args) {
+                                        receipts.push(Receipt {
+                                            block_height: block_height.into(),
+                                            block_hash: block_hash.clone(),
+                                            block_timestamp: block_timestamp.into(),
+                                            block_epoch_id: block_epoch_id.clone(),
+                                            outcome_index: outcome_index as i32,
+                                            receipt_id: receipt_id.clone(),
+                                            index_in_receipt: index_in_receipt as i32,
+                                            signer_public_key: signer_public_key.to_string(),
+                                            signer_id: signer_id.to_string(),
+                                            predecessor_id: predecessor_id.clone(),
+                                            account_id: account_id.clone(),
+                                            status,
+                                            deposit: bigdecimal::BigDecimal::from_str(
+                                                deposit.to_string().as_str(),
+                                            )
+                                            .unwrap(),
+                                            gas: gas.into(),
+                                            method_name,
+                                            args,
+                                        });
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    ReceiptEnumView::Data { .. } => {}
+                }
+            }
         }
     }
 
@@ -178,8 +235,18 @@ async fn extract_events(
             .on_conflict_do_nothing()
             .execute_async(&pool),
         10,
-        "Scam insert foilureee".to_string(),
+        "Events insert foilureee".to_string(),
         &events
+    );
+
+    crate::await_retry_or_panic!(
+        diesel::insert_into(schema::receipts::table)
+            .values(receipts.clone())
+            .on_conflict_do_nothing()
+            .execute_async(&pool),
+        10,
+        "Receipts insert foilureee".to_string(),
+        &receipts
     );
 
     Ok(())

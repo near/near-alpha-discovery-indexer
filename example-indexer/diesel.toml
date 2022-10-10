@@ -7,5 +7,5 @@ file = "src/schema.rs"
 import_types = ["diesel::sql_types::*", "crate::models::enums::*"]
 # Exclicitly setting `only_tables` to avoid technical tables created by diesel to be included in schema
 filter = { only_tables = [
-    "events"
+    "events", "receipts"
 ] }
