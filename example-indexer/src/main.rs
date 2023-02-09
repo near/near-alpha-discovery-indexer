@@ -91,6 +91,7 @@ fn main() {
                 genesis: None,
                 download_genesis: false,
                 download_genesis_url: None,
+                download_records_url: None,
                 download_config: false,
                 download_config_url: Some("https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/mainnet/config.json".to_string()),
                 boot_nodes: None,
@@ -104,6 +105,7 @@ fn main() {
                 home_dir: std::path::PathBuf::from(near_indexer::get_default_home()),
                 sync_mode: near_indexer::SyncModeEnum::FromInterruption,
                 await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
+                validate_genesis: false,
             };
             let sys = actix::System::new();
             sys.block_on(async move {
