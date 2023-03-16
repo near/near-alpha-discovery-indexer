@@ -1,5 +1,5 @@
 [package]
-name = "example-indexer"
+name = "nearsocial-indexer"
 version = "0.3.0"
 authors = ["Near Inc <hello@nearprotocol.com>"]
 edition = "2018"
@@ -14,6 +14,8 @@ bigdecimal = "=0.1.0"
 anyhow = "1.0.51"
 diesel = { version = "1.4.7", features = ["postgres", "numeric", "serde_json"] }
 diesel-derive-enum = { git = "https://github.com/khorolets/diesel-derive-enum.git", branch = "lookup-hack", features = ["postgres"] }
+itertools = "0.10.3"
+futures = "0.3.5"
 
 openssl-probe = { version = "0.1.2" }
 # futures = "0.3.5"
@@ -30,4 +32,4 @@ serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
 
 actix-diesel = { git = "https://github.com/frol/actix-diesel", branch="actix-0.13" }
-near-indexer = { git = "https://github.com/near/nearcore", rev = "1.31.0" }
+near-lake-framework = "0.7.1"

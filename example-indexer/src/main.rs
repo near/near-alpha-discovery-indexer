@@ -9,8 +9,12 @@ use actix_diesel::dsl::AsyncRunQueryDsl;
 use actix_diesel::Database;
 use diesel::PgConnection;
 use dotenv::dotenv;
-use near_indexer::near_primitives::views::{
-    ActionView, ExecutionOutcomeView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
+use futures::StreamExt;
+use near_lake_framework::{
+    near_indexer_primitives::views::{
+        ActionView, ExecutionOutcomeView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
+    },
+    LakeConfig, LakeConfigBuilder,
 };
 use std::collections::HashSet;
 use std::env;
@@ -22,8 +26,6 @@ use crate::models::events::Event;
 use crate::models::social::Receipt;
 
 fn get_database_credentials() -> String {
-    dotenv().ok();
-
     env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file")
 }
 
@@ -34,17 +36,50 @@ fn establish_connection() -> actix_diesel::Database<PgConnection> {
         .open(&database_url)
 }
 
+fn lake_config() -> anyhow::Result<LakeConfig> {
+    let chain_id = env::var("CHAIN_ID").expect("CHAIN_ID must be set in .env file");
+    let start_block_height: u64 = u64::from_str(
+        env::var("START_BLOCK_HEIGHT")
+            .expect("START_BLOCK_HEIGHT must be set in .env file")
+            .as_str(),
+    )
+    .expect("Failed to parse START_BLOCK_HEIGHT as u64");
+    let mut config = LakeConfigBuilder::default().start_block_height(start_block_height);
+
+    match chain_id.as_str() {
+        "testnet" => {
+            config = config.testnet();
+        }
+        "mainnet" => {
+            config = config.mainnet();
+        }
+        _ => {
+            panic!(
+                "Unsupported CHAIN_ID provided: {}. Only `testnet` and `mainnet` are supported",
+                &chain_id
+            )
+        }
+    };
+
+    Ok(config.build()?)
+}
+
 const SCAM_PROJECT: &str = "scam_project";
 const INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 const MAX_DELAY_TIME: std::time::Duration = std::time::Duration::from_secs(120);
 
-fn main() {
+#[actix::main]
+async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     openssl_probe::init_ssl_cert_env_vars();
 
-    let whitelisted_accounts = HashSet::from(["social.near".to_string()]);
-
-    let args: Vec<String> = std::env::args().collect();
-    let home_dir = std::path::PathBuf::from(near_indexer::get_default_home());
+    // let whitelisted_accounts = HashSet::from(["social.near".to_string()]);
+    let whitelisted_accounts = env::var("WHITELIST_ACCOUNTS")
+        .unwrap_or_default()
+        .split(',')
+        .into_iter()
+        .map(|account| account.trim().to_string())
+        .collect::<HashSet<String>>();
 
     let mut env_filter = EnvFilter::new(
         "tokio_reactor=info,near=info,stats=info,telemetry=info,indexer=info,aggregated=info",
@@ -75,61 +110,33 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
 
-    let command = args
-        .get(1)
-        .map(|arg| arg.as_str())
-        .expect("You need to provide a command: `init` or `run` as arg");
+    let pool = establish_connection();
 
-    match command {
-        "init" => {
-            let config_args = near_indexer::InitConfigArgs {
-                chain_id: None,
-                account_id: None,
-                test_seed: None,
-                num_shards: 4,
-                fast: false,
-                genesis: None,
-                download_genesis: false,
-                download_genesis_url: None,
-                download_records_url: None,
-                download_config: false,
-                download_config_url: Some("https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/mainnet/config.json".to_string()),
-                boot_nodes: None,
-                max_gas_burnt_view: None
-            };
-            near_indexer::indexer_init_configs(&home_dir, config_args).unwrap();
-        }
-        "run" => {
-            let pool = establish_connection();
-            let indexer_config = near_indexer::IndexerConfig {
-                home_dir: std::path::PathBuf::from(near_indexer::get_default_home()),
-                sync_mode: near_indexer::SyncModeEnum::FromInterruption,
-                await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-                validate_genesis: false,
-            };
-            let sys = actix::System::new();
-            sys.block_on(async move {
-                let indexer = near_indexer::Indexer::new(indexer_config).unwrap();
-                let stream = indexer.streamer();
-                listen_blocks(stream, pool, &whitelisted_accounts).await;
+    // create a NEAR Lake Framework config
+    let config = lake_config()?;
 
-                actix::System::current().stop();
-            });
-            sys.run().unwrap();
-        }
-        _ => panic!("You have to pass `init` or `run` arg"),
-    }
-}
+    // instantiate the NEAR Lake Framework Stream
+    let (sender, stream) = near_lake_framework::streamer(config);
 
-async fn listen_blocks(
-    mut stream: tokio::sync::mpsc::Receiver<near_indexer::StreamerMessage>,
-    pool: Database<PgConnection>,
-    whitelisted_accounts: &HashSet<String>,
-) {
-    while let Some(streamer_message) = stream.recv().await {
-        extract_info(&pool, streamer_message, whitelisted_accounts)
-            .await
-            .unwrap();
+    tracing::info!(
+        "Starting the indexer with whitelisted accounts:\n{:?}",
+        &whitelisted_accounts
+    );
+
+    // read the stream events and pass them to a handler function with
+    // concurrency 1
+    let mut handlers = tokio_stream::wrappers::ReceiverStream::new(stream)
+        .map(|streamer_message| extract_info(&pool, streamer_message, &whitelisted_accounts))
+        .buffer_unordered(1usize);
+
+    while let Some(_handle_message) = handlers.next().await {}
+    drop(handlers); // close the channel so the sender will stop
+
+    // propagate errors from the sender
+    match sender.await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(anyhow::Error::from(e)), // JoinError
     }
 }
 
@@ -137,7 +144,7 @@ const EVENT_LOG_PREFIX: &str = "EVENT_JSON:";
 
 async fn extract_info(
     pool: &Database<PgConnection>,
-    msg: near_indexer::StreamerMessage,
+    msg: near_lake_framework::near_indexer_primitives::StreamerMessage,
     whitelisted_accounts: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let block_height = msg.block.header.height;
@@ -231,11 +238,18 @@ async fn extract_info(
         }
     }
 
+    tracing::info!(
+        "Block #{}: EVENTS: {} | RECEIPTS: {}",
+        msg.block.header.height,
+        &events.len(),
+        &receipts.len(),
+    );
+
     crate::await_retry_or_panic!(
         diesel::insert_into(schema::events::table)
             .values(events.clone())
             .on_conflict_do_nothing()
-            .execute_async(&pool),
+            .execute_async(pool),
         10,
         "Events insert foilureee".to_string(),
         &events
@@ -245,7 +259,7 @@ async fn extract_info(
         diesel::insert_into(schema::receipts::table)
             .values(receipts.clone())
             .on_conflict_do_nothing()
-            .execute_async(&pool),
+            .execute_async(pool),
         10,
         "Receipts insert foilureee".to_string(),
         &receipts
