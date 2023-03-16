@@ -26,6 +26,9 @@ CHAIN_ID=testnet
 START_BLOCK_HEIGHT=105141584 # the block when near social was deployed on testnet
 WHITELIST_ACCOUNTS=social.near,v1.social08.testnet
 RUST_LOGS="nearsocial-indexer=info,near-lake-framework=info"
+
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 ```
 
 **Please note** the `RUST_LOGS`. You can ommit it and indexer is going to run silently.
@@ -47,6 +50,10 @@ $ cargo build --release
 ```bash
 ./target/release/nearsocial-indexer
 ```
+
+7.1 AWS credentials
+
+Don't forget to provide AWS credentials that can read from S3 buckets (using Requester Pays). You can provide them either via file or using environmental variables. Ref: https://docs.rs/near-lake-framework/0.7.1/near_lake_framework/#file-based-aws-credentials
 
 8. Stop it with `CTRL+C` when needed.
 
