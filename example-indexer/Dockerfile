@@ -30,11 +30,14 @@ COPY ./src ./src
 #RUN rm ./target/release/deps/nearsocial-indexer*
 RUN touch src/main.rs && cargo build --release
 
-# # our final base
-# FROM ubuntu:20.04
+# our final base
+FROM ubuntu:20.04
 
-# # copy the build artifact from the build stage
-# COPY --from=build /app/target/release/nearsocial-indexer .
+# copy the build artifact from the build stage
+COPY --from=build /app/target/release/nearsocial-indexer .
+
+RUN apt update
+RUN apt install -y libpq-dev
 
 # set the startup command to run your binary
-ENTRYPOINT ["./target/release/nearsocial-indexer"]
+ENTRYPOINT ["./nearsocial-indexer"]
