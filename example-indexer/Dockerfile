@@ -37,7 +37,7 @@ FROM ubuntu:20.04
 COPY --from=build /app/target/release/nearsocial-indexer .
 
 RUN apt update
-RUN apt install -y libpq-dev
+RUN apt install -y libpq-dev ca-certificates
 
 # set the startup command to run your binary
 ENTRYPOINT ["./nearsocial-indexer"]
