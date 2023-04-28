@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 #[get("/metrics")]
-async fn get_latest_block_height() -> impl Responder {
+async fn metrics() -> impl Responder {
     let encoder = prometheus::TextEncoder::new();
 
     let mut buffer = Vec::new();
@@ -49,7 +49,7 @@ pub(crate) fn init_server(port: u16) -> anyhow::Result<actix_web::dev::Server> {
         "Starting metrics server on http://0.0.0.0:{port}/metrics"
     );
 
-    Ok(HttpServer::new(|| App::new().service(get_latest_block_height))
+    Ok(HttpServer::new(|| App::new().service(metrics))
         .bind(("0.0.0.0", port))?
         .disable_signals()
         .run())
