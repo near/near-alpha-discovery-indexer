@@ -21,7 +21,7 @@ lazy_static! {
     .unwrap();
 }
 
-#[get("/latest_block_height")]
+#[get("/metrics")]
 async fn get_latest_block_height() -> impl Responder {
     let encoder = prometheus::TextEncoder::new();
 
