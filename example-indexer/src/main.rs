@@ -20,10 +20,18 @@ use std::collections::HashSet;
 use std::env;
 use std::str::FromStr;
 use tracing_subscriber::EnvFilter;
+use std::convert::TryFrom;
 
 use crate::models::enums::ExecutionOutcomeStatus;
 use crate::models::events::Event;
 use crate::models::social::Receipt;
+
+mod metrics;
+
+#[macro_use]
+extern crate lazy_static;
+
+pub(crate) const LOGGING_PREFIX: &str = "nearsocial_indexer";
 
 fn get_database_credentials() -> String {
     env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file")
@@ -123,6 +131,8 @@ async fn main() -> anyhow::Result<()> {
         &whitelisted_accounts
     );
 
+    tokio::spawn(metrics::init_server(8888).expect("Failed to start metrics server"));
+
     // read the stream events and pass them to a handler function with
     // concurrency 1
     let mut handlers = tokio_stream::wrappers::ReceiverStream::new(stream)
@@ -151,6 +161,8 @@ async fn extract_info(
     let block_hash = msg.block.header.hash.to_string();
     let block_timestamp = msg.block.header.timestamp_nanosec;
     let block_epoch_id = msg.block.header.epoch_id.to_string();
+
+    metrics::LATEST_BLOCK_HEIGHT.set(i64::try_from(block_height)?);
 
     let mut events = vec![];
     let mut receipts = vec![];
