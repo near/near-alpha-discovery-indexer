@@ -43,13 +43,18 @@ async fn metrics() -> impl Responder {
     }
 }
 
+#[get("/health")]
+async fn health() -> impl Responder {
+    "Healthy"
+}
+
 pub(crate) fn init_server(port: u16) -> anyhow::Result<actix_web::dev::Server> {
     tracing::info!(
         target: LOGGING_PREFIX,
         "Starting metrics server on http://0.0.0.0:{port}/metrics"
     );
 
-    Ok(HttpServer::new(|| App::new().service(metrics))
+    Ok(HttpServer::new(|| App::new().service(metrics).service(health))
         .bind(("0.0.0.0", port))?
         .disable_signals()
         .run())
