@@ -15,7 +15,7 @@ RUN apt update
 RUN apt install -y libprotobuf-dev protobuf-compiler
 RUN apt install -y make clang pkg-config libssl-dev
 
-RUN apt install libpq-dev
+RUN apt install -y libpq-dev
 RUN apt install -y cmake
 
 # this build step will cache your dependencies
