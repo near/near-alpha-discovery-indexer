@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
         &whitelisted_accounts
     );
 
-    tokio::spawn(metrics::init_server(8888).expect("Failed to start metrics server"));
+    tokio::spawn(metrics::init_server(80).expect("Failed to start metrics server"));
 
     // read the stream events and pass them to a handler function with
     // concurrency 1
